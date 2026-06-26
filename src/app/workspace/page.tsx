@@ -80,8 +80,17 @@ export default function WorkspacePage() {
   const [supportPanel, setSupportPanel] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<null | "reset" | "clear" | "vpn" | "newEmployee" | "compliance">(null);
   const [guidedStep, setGuidedStep] = useState<number | null>(null);
+  const [demoGuideOpen, setDemoGuideOpen] = useState(true);
 
   const selectedDevice = devices.find((device) => device.id === store.selectedTicket.deviceId) ?? devices[0];
+  const demoProgress = [
+    { label: "Open critical VPN ticket", done: store.selectedTicket.id === "INC-4821" },
+    { label: "Run VPN diagnostics", done: store.checklistDone.includes("diagnostics") },
+    { label: "Reset VPN adapter", done: store.checklistDone.includes("adapter") },
+    { label: "Clear DNS cache", done: store.checklistDone.includes("dns") },
+    { label: "Complete checklist", done: store.completedRequired },
+    { label: "Resolve and notify employee", done: store.selectedTicket.status === "Resolved" || store.selectedTicket.status === "Closed" }
+  ];
 
   const filteredTickets = useMemo(() => {
     return [...store.tickets]
@@ -109,6 +118,23 @@ export default function WorkspacePage() {
         <NavRail />
         <div className="flex min-w-0 flex-1 flex-col pb-20 lg:pb-16">
           <TopBar unreadAlerts={store.unreadAlerts} />
+          <DemoGuide
+            open={demoGuideOpen}
+            steps={demoProgress}
+            onToggle={() => setDemoGuideOpen((value) => !value)}
+            onStartGuide={() => setGuidedStep(0)}
+            onLoadVpn={() => {
+              store.loadScenario("vpn");
+              store.setSelectedTicketId("INC-4821");
+              setDemoGuideOpen(true);
+            }}
+            onSelectVpn={() => store.setSelectedTicketId("INC-4821")}
+            onRunDiagnostics={() => store.runAction("Run Diagnostics")}
+            onResetAdapter={() => store.runAction("Reset VPN Adapter")}
+            onClearDns={() => store.runAction("Clear DNS Cache")}
+            onCompleteChecklist={store.completeRequiredChecklist}
+            onResolve={() => setSupportPanel("Resolve Ticket")}
+          />
           <div className="grid min-h-0 flex-1 gap-3 p-3 lg:grid-cols-[330px_minmax(0,1fr)_330px] xl:grid-cols-[360px_minmax(0,1fr)_360px]">
             <section className="space-y-3 lg:overflow-y-auto">
               <ActiveSession ticket={store.selectedTicket} employeeName={store.selectedEmployee.name} deviceName={selectedDevice.model} canResolve={store.completedRequired} missingCount={store.missingChecklist.length} onResolve={() => setSupportPanel("Resolve Ticket")} onPanel={setSupportPanel} />
@@ -245,6 +271,76 @@ function TopBar({ unreadAlerts }: { unreadAlerts: number }) {
         </div>
       </div>
     </header>
+  );
+}
+
+function DemoGuide(props: {
+  open: boolean;
+  steps: { label: string; done: boolean }[];
+  onToggle: () => void;
+  onStartGuide: () => void;
+  onLoadVpn: () => void;
+  onSelectVpn: () => void;
+  onRunDiagnostics: () => void;
+  onResetAdapter: () => void;
+  onClearDns: () => void;
+  onCompleteChecklist: () => void;
+  onResolve: () => void;
+}) {
+  const completed = props.steps.filter((step) => step.done).length;
+  const nextStep = props.steps.find((step) => !step.done)?.label ?? "Switch to Employee Portal to confirm the resolved update";
+  const nextActions = [
+    { label: "Select VPN Ticket", onClick: props.onSelectVpn, disabled: props.steps[0].done },
+    { label: "Run Diagnostics", onClick: props.onRunDiagnostics, disabled: !props.steps[0].done || props.steps[1].done },
+    { label: "Reset Adapter", onClick: props.onResetAdapter, disabled: !props.steps[1].done || props.steps[2].done },
+    { label: "Clear DNS", onClick: props.onClearDns, disabled: !props.steps[2].done || props.steps[3].done },
+    { label: "Finish Checklist", onClick: props.onCompleteChecklist, disabled: !props.steps[3].done || props.steps[4].done },
+    { label: "Resolve", onClick: props.onResolve, disabled: !props.steps[4].done || props.steps[5].done }
+  ];
+
+  return (
+    <section className="border-b border-white/10 bg-ink-900/80 px-3 py-3">
+      <div className="mx-auto max-w-[1560px] rounded-lg border border-signal-cyan/20 bg-signal-cyan/[0.055] p-3 shadow-glow">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded border border-signal-cyan/30 bg-signal-cyan/10 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-cyan-100">Demo Path</span>
+              <span className="text-xs text-slate-400">{completed}/{props.steps.length} steps complete</span>
+            </div>
+            <p className="mt-2 text-sm font-semibold text-white">Goal: resolve Sarah Johnson&apos;s critical VPN incident, then verify the employee-facing update.</p>
+            <p className="mt-1 text-xs text-slate-400">Next: {nextStep}</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={props.onStartGuide} className="h-10 rounded-md bg-signal-blue px-3 text-xs font-bold text-white">Start Walkthrough</button>
+            <button onClick={props.onLoadVpn} className="h-10 rounded-md border border-signal-cyan/30 bg-black/16 px-3 text-xs font-bold text-cyan-100">Reset to VPN Demo</button>
+            <Link href="/employee" className="inline-flex h-10 items-center rounded-md border border-white/10 bg-white/[0.04] px-3 text-xs font-bold text-slate-200">Employee View</Link>
+            <button onClick={props.onToggle} className="h-10 rounded-md border border-white/10 px-3 text-xs font-bold text-slate-300">{props.open ? "Hide Steps" : "Show Steps"}</button>
+          </div>
+        </div>
+        {props.open && (
+          <div className="mt-3 grid gap-3 xl:grid-cols-[1fr_520px]">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {props.steps.map((step, index) => (
+                <div key={step.label} className={cn("flex items-center gap-2 rounded-md border p-2 text-xs", step.done ? "border-signal-green/30 bg-signal-green/10 text-green-100" : "border-white/10 bg-black/18 text-slate-300")}>
+                  <span className={cn("grid h-5 w-5 shrink-0 place-items-center rounded border text-[10px] font-bold", step.done ? "border-signal-green bg-signal-green text-ink-950" : "border-white/20 text-slate-500")}>{step.done ? "✓" : index + 1}</span>
+                  <span>{step.label}</span>
+                </div>
+              ))}
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">One-click actions</p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {nextActions.map((action) => (
+                  <button key={action.label} onClick={action.onClick} disabled={action.disabled} className="min-h-10 rounded-md border border-white/10 bg-black/18 px-2 text-xs font-bold text-slate-200 hover:border-signal-cyan/35 disabled:cursor-not-allowed disabled:opacity-45">
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
   );
 }
 
